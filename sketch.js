@@ -2,23 +2,27 @@ let handPose;
 let video;
 let hands = [];
 
-// Tiempo y color
-let t = 0;
-let speed = 0.4;
+// Sol y luna
+let sun;
+let moon;
+let sunRadius = 70;
+let moonRadius = 40;
 
-// 0 = caos | 1 = detenido
-let calmLevel = 0;
-let finished = false;
+// Estados
+let allowDrag = false;
+let alarmActive = false;
+let eclipseDone = false;
+let showStars = false;
 
-// Botones falsos
-let fakeButtons = [];
-let messages = ["no", "no funciona", "no ahora", "no sirve", "no es así"];
-let currentMessage = "";
-let messageTimer = 0;
+// Sonido
+let alarm;
+let alarmVolume = 0.1;
 
-// Color final
-let finalColor;
+// Estrellas
+let stars = [];
 
+// ----------------------------
+// HANDPOSE
 // ----------------------------
 
 function preload() {
@@ -34,177 +38,200 @@ function setup() {
 
   handPose.detectStart(video, gotHands);
 
-  createFakeButtons();
+  sun = createVector(width / 2, height / 2);
+  randomizeMoon();
 
-  finalColor = color(
-    random(90, 160),
-    random(90, 160),
-    random(90, 160)
-  );
+  alarm = new p5.Oscillator("sine");
+  alarm.freq(880);
+  alarm.amp(0);
+  alarm.start();
+
+  createStars();
 }
 
 // ----------------------------
 
 function draw() {
-  drawBackground();
-  drawTopInstruction();
-  drawFakeButtons();
-  drawCenterMessage();
-  detectPalms();
+  if (showStars) {
+    drawStarSky();
+    drawFinalMessage();
+    return;
+  }
+
+  background(0);
+
+  drawInstruction();
+  drawSun();
+  drawMoon();
+
+  detectPalm();
+  checkEclipse();
+
   drawCameraPreview();
 }
 
 // ----------------------------
-// Fondo
+// Texto
 // ----------------------------
 
-function drawBackground() {
-  if (!finished) {
-    t += speed;
+function drawInstruction() {
+  fill(255);
+  textAlign(CENTER, TOP);
+  textSize(18);
+  text("Deten todo y crea un eclipse", width / 2, 20);
+}
 
-    let r = lerp(noise(t * 2) * 255, red(finalColor), calmLevel);
-    let g = lerp(noise(t * 3 + 100) * 255, green(finalColor), calmLevel);
-    let b = lerp(noise(t * 4 + 200) * 255, blue(finalColor), calmLevel);
+// ----------------------------
+// Sol
+// ----------------------------
 
-    background(r, g, b);
+function drawSun() {
+  noStroke();
+  fill(255);
+  circle(sun.x, sun.y, sunRadius * 2);
+}
 
-    speed = lerp(speed, 0.005, calmLevel);
+// ----------------------------
+// Luna
+// ----------------------------
 
-    if (calmLevel >= 0.99) {
-      finished = true;
+function drawMoon() {
+  if (eclipseDone) return;
+  noStroke();
+  fill(180);
+  circle(moon.x, moon.y, moonRadius * 2);
+}
+
+// ----------------------------
+// Mouse
+// ----------------------------
+
+function mousePressed() {
+  if (eclipseDone) return;
+
+  let d = dist(mouseX, mouseY, moon.x, moon.y);
+  if (d < moonRadius) {
+    if (!allowDrag) {
+      triggerAlarm();
+      randomizeMoon();
     }
-  } else {
-    background(finalColor);
+  }
+}
+
+function mouseDragged() {
+  if (!allowDrag || eclipseDone) return;
+
+  let d = dist(mouseX, mouseY, moon.x, moon.y);
+  if (d < moonRadius + 10) {
+    moon.x = mouseX;
+    moon.y = mouseY;
   }
 }
 
 // ----------------------------
-// Texto superior
+// Eclipse
 // ----------------------------
 
-function drawTopInstruction() {
-  if (finished) return;
+function checkEclipse() {
+  if (eclipseDone) return;
 
-  fill(255);
-  textAlign(CENTER, TOP);
-  textSize(16);
-  text(
-    "tómate 10 segundos para calmar la página",
-    width / 2,
-    20
-  );
+  let d = dist(moon.x, moon.y, sun.x, sun.y);
+
+  if (d < 10 && allowDrag) {
+    eclipseDone = true;
+    alarm.amp(0, 0.3);
+
+    // transición al final
+    setTimeout(() => {
+      showStars = true;
+    }, 800);
+  }
 }
 
 // ----------------------------
-// Botones falsos
+// Alarma
 // ----------------------------
 
-function createFakeButtons() {
-  let texts = ["cálmate", "relájate", "tranquila", "respira", "controla esto"];
+function triggerAlarm() {
+  alarmActive = true;
+  allowDrag = false;
 
-  for (let txt of texts) {
-    fakeButtons.push({
-      x: random(80, width - 160),
-      y: random(120, height - 80),
-      w: 150,
-      h: 40,
-      label: txt
+  alarmVolume = min(alarmVolume + 0.1, 1);
+  alarm.amp(alarmVolume, 0.1);
+}
+
+// ----------------------------
+// Detección de palma
+// ----------------------------
+
+function detectPalm() {
+  if (!alarmActive) return;
+  if (hands.length === 0) return;
+
+  let hand = hands[0];
+
+  if (hand.keypoints && hand.keypoints.length > 15) {
+    alarm.amp(0, 0.2);
+    alarmActive = false;
+    allowDrag = true;
+    alarmVolume = 0.1;
+  }
+}
+
+// ----------------------------
+// Estrellas
+// ----------------------------
+
+function createStars() {
+  stars = [];
+  for (let i = 0; i < 250; i++) {
+    stars.push({
+      x: random(width),
+      y: random(height),
+      r: random(1, 2.5)
     });
   }
 }
 
-function drawFakeButtons() {
-  if (finished) return;
+function drawStarSky() {
+  background(0);
 
+  noStroke();
+  fill(255);
+  for (let s of stars) {
+    circle(s.x, s.y, s.r);
+  }
+}
+
+// ----------------------------
+// Mensaje final
+// ----------------------------
+
+function drawFinalMessage() {
+  fill(255);
   textAlign(CENTER, CENTER);
-  textSize(14);
-
-  for (let b of fakeButtons) {
-    stroke(255);
-    noFill();
-    rect(b.x, b.y, b.w, b.h, 6);
-
-    noStroke();
-    fill(255);
-    text(b.label, b.x + b.w / 2, b.y + b.h / 2);
-  }
+  textSize(28);
+  text("completaste un eclipse, ahora disfruta la noche", width / 2, height / 2);
 }
 
 // ----------------------------
-// Click inútil
+// Utilidades
 // ----------------------------
 
-function mousePressed() {
-  if (finished) return;
-
-  for (let b of fakeButtons) {
-    if (
-      mouseX > b.x &&
-      mouseX < b.x + b.w &&
-      mouseY > b.y &&
-      mouseY < b.y + b.h
-    ) {
-      currentMessage = random(messages);
-      messageTimer = 100;
-      calmLevel = max(0, calmLevel - 0.1);
-    }
-  }
+function randomizeMoon() {
+  moon = createVector(
+    random(80, width - 80),
+    random(120, height - 80)
+  );
 }
-
-// ----------------------------
-// Mensajes
-// ----------------------------
-
-function drawCenterMessage() {
-  if (messageTimer > 0 && !finished) {
-    fill(255);
-    textAlign(CENTER, CENTER);
-    textSize(32);
-    text(currentMessage, width / 2, height / 2);
-    messageTimer--;
-  }
-
-  if (finished) {
-    fill(255);
-    textAlign(CENTER, CENTER);
-    textSize(34);
-    text(
-      "Gracias, ahora puedo descansar <3",
-      width / 2,
-      height / 2
-    );
-  }
-}
-
-// ----------------------------
-// Detección de palmas (~10 s)
-// ----------------------------
-
-function detectPalms() {
-  if (finished) return;
-
-  if (hands.length >= 2) {
-    let h1 = hands[0];
-    let h2 = hands[1];
-
-    if (h1.keypoints.length > 15 && h2.keypoints.length > 15) {
-      calmLevel = constrain(calmLevel + 0.002, 0, 1);
-      return;
-    }
-  }
-
-  calmLevel = max(0, calmLevel - 0.001);
-}
-
-// ----------------------------
-// Cámara espejada
-// ----------------------------
 
 function drawCameraPreview() {
+  if (showStars) return;
+
   push();
   translate(width, 0);
   scale(-1, 1);
-  image(video, 20, 20, 160, 120);
+  image(video, 20, height - 140, 160, 120);
   pop();
 }
 
@@ -216,6 +243,6 @@ function gotHands(results) {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  fakeButtons = [];
-  createFakeButtons();
+  sun.set(width / 2, height / 2);
+  createStars();
 }
